@@ -52,7 +52,7 @@ Asegúrate de que el servicio de Docker esté en ejecución antes de usar los co
 El comando deploy lee un archivo de configuración, construye las imágenes necesarias, crea una red aislada y levanta todos los servicios.
 
 ```
-python agent.py deploy -f <ruta/al/archivo.yml>
+python agente.py deploy -f <ruta/al/archivo.yml>
 ```
 Ejemplo de salida:
 ```
@@ -74,13 +74,13 @@ Servicios creados:
 El comando teardown busca todos los recursos (contenedores, redes) etiquetados con el nombre del entorno y los elimina por completo, liberando los recursos y puertos.
 
 ```
-python agent.py teardown <nombre-del-entorno>
+python agente.py teardown <nombre-del-entorno>
 ```
 
 Ejemplo de uso:
 
 ```
-python agent.py teardown autotest-env-a1b2c3d4
+python agente.py teardown autotest-env-a1b2c3d4
 ```
 
 Salida:
