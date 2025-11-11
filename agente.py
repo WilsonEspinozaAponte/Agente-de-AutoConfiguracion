@@ -14,7 +14,7 @@ except ImportError:
 @click.group()
 def cli():
     """
-    Agente Autonómico para la Configuración Dinámica de Entornos de Pruebas.
+    Agente Autonómico para la Configuración Dinámica de Entornos de Pruebas
     
     Este CLI permite desplegar y destruir entornos basados en archivos 
     de configuración YML.
@@ -28,8 +28,9 @@ def cli():
     '--file', '-f',
     type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
     required=True,
-    help='Ruta al archivo docker-compose.yml o manifiesto personalizado.'
+    help='Ruta al archivo docker-compose.yml o manifiesto personalizado'
 )
+
 def deploy(file):
     """
     Despliega un nuevo entorno de pruebas basado en un archivo de configuración.
@@ -93,6 +94,46 @@ def teardown(env_name):
         
     except Exception as e:
         click.secho(f"\n ERROR durante la destrucción: {e}", fg="red", bold=True)
+        sys.exit(1)
+
+# Comando 'monitor'
+@cli.command()
+@click.option(
+    '--file', '-f',
+    type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
+    required=True,
+    help='Ruta al archivo de configuración YML original del entorno.'
+)
+@click.argument('env_name')
+def monitor(file, env_name):
+    """
+    Inicia el monitoreo (Self-Healing) para un entorno ya desplegado
+    
+    ENV_NAME es el nombre único del entorno (ej: 'autotest-env-XXXX')
+    Se debe proveer el archivo YML original para leer las reglas de HealthCheck
+    """
+    
+    # Se carga la configuración para saber que monitorear
+    try:
+        config_data = config_parser.load_config(file)
+        if not config_data or 'services' not in config_data:
+            click.secho(" ERROR: El archivo de configuración está vacío o no tiene la sección 'services'.", fg="red")
+            sys.exit(1)
+            
+        click.secho(f"  Reglas de monitoreo cargadas desde '{click.format_filename(file)}'.", fg="green")
+
+    except Exception as e:
+        click.secho(f" ERROR al analizar el archivo YML: {e}", fg="red")
+        sys.exit(1)
+
+    # Se inicia el bucle de monitoreo
+    try:
+        click.echo(f"\n  Iniciando modo de monitoreo para '{env_name}'...")
+        click.echo(" (Presiona Ctrl+C para detener el agente y el monitoreo)")
+        docker_controller.monitor_environment(env_name, config_data)
+        
+    except Exception as e:
+        click.secho(f"\n ERROR durante el monitoreo: {e}", fg="red", bold=True)
         sys.exit(1)
 
 # Punto de Entrada Principal 
