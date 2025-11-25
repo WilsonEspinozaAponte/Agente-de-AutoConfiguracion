@@ -33,6 +33,32 @@ def _validate_and_set_defaults(config: dict):
             # Si el YML no los define se usan estos valores
             hc_config.setdefault('retries', 3)
             hc_config.setdefault('interval', 15)
+        
+        if 'optimization_rules' in service_config:
+            rules = service_config['optimization_rules']
+            
+            # Asegurarse de que sea una lista 
+            if not isinstance(rules, list):
+                raise ValueError(f"Servicio '{service_name}': 'optimization_rules' debe ser una lista.")
+
+            for i, rule in enumerate(rules):
+                # Validar campos obligatorios
+                if 'metric' not in rule:
+                    raise ValueError(f"Servicio '{service_name}', regla de optimización #{i+1}: falta el campo 'metric' (ej: 'cpu_usage').")
+                
+                if 'threshold' not in rule:
+                    raise ValueError(f"Servicio '{service_name}', regla de optimización #{i+1}: falta el campo 'threshold' (ej: 70).")
+                
+                if 'action' not in rule:
+                    raise ValueError(f"Servicio '{service_name}', regla de optimización #{i+1}: falta el campo 'action' (ej: 'scale_up').")
+
+                # Validar que el threshold sea un número
+                if not isinstance(rule['threshold'], (int, float)):
+                     raise ValueError(f"Servicio '{service_name}', regla #{i+1}: 'threshold' debe ser un número.")
+
+                # Establecer valores por defecto
+                # Si no dice cuántas réplicas añadir, asumimos 1
+                rule.setdefault('replicas', 1)
 
 def load_config(file_path: str) -> dict:
     """

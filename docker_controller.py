@@ -281,7 +281,7 @@ def monitor_environment(env_name: str, config: dict):
 
     print(f"--- Iniciando bucle de monitoreo para '{env_name}' ---")
     
-    initial_grace_period = 20 # 20 segundos de gracia
+    initial_grace_period = 10 # 10 segundos de gracia
     print(f"  Dando un período de gracia inicial de {initial_grace_period} segundos para el arranque...")
     time.sleep(initial_grace_period)
 
@@ -310,6 +310,25 @@ def monitor_environment(env_name: str, config: dict):
                         if failure_counts[service_name] > 0:
                             print(f"  Servicio '{service_name}' se ha recuperado.")
                         failure_counts[service_name] = 0
+
+                        # Solo optimizamos si el contenedor está saludable
+                        if 'optimization_rules' in service_config:
+                            opt_rules = service_config['optimization_rules']
+                            
+                            # Obtener stats (stream=False devuelve una instantánea)
+                            stats = container.stats(stream=False)
+                            cpu_percent = _calculate_cpu_percent(stats)
+                            
+                            # Imprimir métrica actual 
+                            print(f"     {service_name}: CPU {cpu_percent:.2f}%")
+
+                            for rule in opt_rules:
+                                if rule['metric'] == 'cpu_usage' and rule['action'] == 'scale_up':
+                                    if cpu_percent > rule['threshold']:
+                                        print(f"     ALERTA: CPU ({cpu_percent:.2f}%) superó umbral ({rule['threshold']}%)")
+                                        # Obtener red del contenedor principal
+                                        net_name = list(container.attrs['NetworkSettings']['Networks'].keys())[0]
+                                        _scale_service_up(client, env_name, service_name, service_config, net_name)
                     
                     else:
                         # Incrementar fallo y notificar
@@ -324,7 +343,7 @@ def monitor_environment(env_name: str, config: dict):
                     print(f"  Error chequeando '{service_name}': {e}. Marcando como fallo.")
                     failure_counts[service_name] += 1
 
-                # 4. Lógica de Autocorrección (Self-Healing)
+                # Lógica de Autocorrección (Self-Healing)
                 if failure_counts[service_name] >= hc_rule['retries']:
                     print(f"  AUTOCORRECCIÓN: Servicio '{service_name}' alcanzó {failure_counts[service_name]} fallos. Reiniciando...")
                     try:
@@ -341,3 +360,53 @@ def monitor_environment(env_name: str, config: dict):
                         
     except KeyboardInterrupt:
         print("\n--- Bucle de monitoreo interrumpido por el usuario (Ctrl+C) ---")
+
+def _calculate_cpu_percent(stats: dict) -> float:
+    """
+    Calcula el porcentaje de uso de CPU a partir de las estadísticas de Docker
+    """
+    try:
+        cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+        system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+        
+        if system_delta > 0.0 and cpu_delta > 0.0:
+            # Obtener número de núcleos
+            online_cpus = stats['cpu_stats'].get('online_cpus', 1) or len(stats['cpu_stats']['cpu_usage']['percpu_usage'])
+            return (cpu_delta / system_delta) * online_cpus * 100.0
+    except KeyError:
+        pass # La estructura de stats puede variar según versión de Docker API
+    return 0.0
+
+def _scale_service_up(client, env_name, service_name, service_config, network_name):
+    """
+    Despliega una nueva réplica del servicio (Escalado Horizontal).
+    NOTA: Las réplicas NO mapean puertos al host para evitar conflictos.
+    """
+    replica_id = uuid.uuid4().hex[:6]
+    container_name = f"{env_name}-{service_name}-replica-{replica_id}"
+    print(f"     ESCALANDO: Creando réplica '{container_name}'...")
+
+    try:
+        # Resolver Imagen (Igual que en deploy)
+        image_name = service_config.get('image')
+        # Si era un build, intentamos usar la imagen ya taggeada del entorno
+        if 'build' in service_config:
+            image_name = f"{service_name}:{env_name}"
+        
+        # Configuración
+        environment_vars = service_config.get('environment', [])
+        labels = {ENV_LABEL: env_name, "autotest.type": "replica"}
+
+        # Crear contenedor (SIN PUERTOS)
+        client.containers.run(
+            image=image_name,
+            name=container_name,
+            labels=labels,
+            network=network_name,
+            environment=environment_vars,
+            detach=True
+        )
+        print(f"     Réplica '{container_name}' iniciada exitosamente.")
+        
+    except Exception as e:
+        print(f"     Error al escalar servicio '{service_name}': {e}")
