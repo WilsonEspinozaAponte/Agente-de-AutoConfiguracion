@@ -1,11 +1,17 @@
 # 🤖 Agente de Configuración Dinámica de Entornos de Pruebas
+ **⚠️ NOTA DE VERSIÓN: Esta rama contiene el prototipo diseñado para ejecución local. Funciona sobre un Docker Engine en una sola máquina y está destinado a validar la lógica de los agentes autonómicos. Para la versión con despliegue en la nube, balanceo de carga y CI/CD integrado, por favor consulte la rama del MVP final.**  
+  
+
 Este proyecto es un prototipo funcional de un agente de computación autonómica diseñado para automatizar el ciclo de vida de los entornos de pruebas.
 
 El objetivo principal es eliminar la intervención manual y los errores asociados con la configuración de entornos de desarrollo y QA, permitiendo a los desarrolladores y testers obtener un entorno funcional y aislado con solo hacer un push de su código.
 
-Esta versión implementa dos propiedades autonómicas clave: **Autoconfiguración (Self-Configuration)** y **Autocorrección (Self-Healing)**.
+Esta versión implementa tres propiedades autonómicas clave:
+ 1. **Autoconfiguración (Self-Configuration)**: Despliegue automático de recursos.
+ 2. **Autocorrección (Self-Healing)**: Detección de fallos y reinicio de servicios.
+ 3. **Auto-optimización (Self-Optimization)**: Escalado horizontal reactivo basado en uso de CPU.
 
-🚀 Prerrequisitos y Configuración
+# 🚀 Prerrequisitos y Configuración
 Para ejecutar este agente, necesitas tener lo siguiente instalado en tu sistema:
 
 - Python 3.9+
@@ -37,19 +43,19 @@ pip install -r requirements.txt
 # 📂 Archivos del Proyecto
 Este repositorio contiene el núcleo del agente autonómico:
 
-- agente.py: El punto de entrada del programa. Define la interfaz de línea de comandos (CLI) usando click para gestionar los comandos deploy y teardown.
+- agente.py: El punto de entrada del programa. Define la interfaz de línea de comandos (CLI) usando click.
   
-- config_parser.py: Un módulo responsable de leer y analizar de forma segura los archivos de configuración .yml (usando PyYAML).
+- config_parser.py: Responsable de leer, analizar y validar los archivos de configuración .yml.
 
-- docker_controller.py: El corazón del agente. Contiene toda la lógica para interactuar con la API de Docker (usando docker-py) para construir imágenes, crear contenedores, gestionar redes y limpiar los recursos.
+- docker_controller.py: Contiene toda la lógica para interactuar con la API de Docker, monitorear salud, calcular métricas de CPU y ejecutar acciones de escalado.
 
-- requirements.txt: El listado de dependencias de Python necesarias para que el agente funcione.
+- requirements.txt: Dependencias del proyecto
 
 # 🛠️ Comandos Básicos
-Asegúrate de que el servicio de Docker esté en ejecución. El flujo de trabajo ahora consta de 3 comandos independientes:
+Asegúrate de que el servicio de Docker esté en ejecución.
 
-**1. Desplegar un Entorno:**
-El comando deploy lee un archivo de configuración, construye las imágenes necesarias, crea una red aislada y levanta todos los servicios. Al finalizar, imprime el nombre único del entorno.
+**1. Desplegar un Entorno:**  
+Lee el archivo de configuración, construye imágenes, crea una red aislada y levanta los servicios.
 ```
 python agente.py deploy -f <ruta/al/archivo.yml>
 ```
@@ -64,12 +70,14 @@ Servicios creados:
   - cache (ID: ...)
     Puertos: {'6379/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '6379'}]}
 ```
-**Importante**: Anota el nombre del entorno (ej: autotest-env-a1b2c3d4). Lo necesitarás para destruirlo.
+**Importante**: Anota el nombre del entorno (ej: autotest-env-a1b2c3d4) para su posterior monitoreo o eliminación.. 
 
-**2. Monitorear un Entorno:**
-El comando monitor inicia un bucle de monitoreo activo para un entorno que ya está desplegado. Lee las reglas health_check del archivo YML y, si un servicio falla repetidamente, lo reinicia automáticamente.
-
-Este comando se ejecuta en su propia terminal y puede ser detenido (Ctrl+C) y reiniciado en cualquier momento sin afectar al entorno.
+**2. Monitorear un Entorno (Healing & Optimization):**  
+Inicia un bucle activo que:
+1. Verifica la salud de los servicios (Health Checks).
+2. Calcula el uso de CPU de los contenedores.
+3. Reinicia contenedores si fallan repetidamente (Self-Healing).
+4. Crea réplicas si la CPU supera el umbral definido (Self-Optimization).
 
 ```
 python agente.py monitor -f <ruta/al/archivo.yml> <nombre-del-entorno>
@@ -93,10 +101,20 @@ Iniciando modo de monitoreo para 'autotest-env-a1b2c3d4'...
       Contenedor 'autotest-env-a1b2c3d4-web' reiniciado.
 ```
 
+Ejemplo de salida (Escalado por CPU):
+```
+(venv) PS> python agente.py monitor -f ejemplo/docker-compose.yml autotest-env-a1b2c3d4
+
+...
+--- [Ciclo de chequeo - ...] ---
+      web: CPU 90.0%
+       ALERTA: CPU (90.00%) superó umbral (80%)
+       ESCALANDO: Creando réplica 'autotest-env-a1b2c3d4-web-replica-07ffa7'...
+       Réplica 'autotest-env-a1b2c3d4-web-replica-07ffa7' iniciada exitosamente.
+```
 
 **3. Destruir un Entorno:**
-El comando teardown busca todos los recursos (contenedores, redes) etiquetados con el nombre del entorno y los elimina por completo, liberando los recursos y puertos.
-
+Elimina todos los recursos (contenedores, réplicas y redes) asociados al entorno.
 ```
 python agente.py teardown <nombre-del-entorno>
 ```
@@ -117,46 +135,48 @@ Encontradas 1 redes. Eliminando...
   Entorno 'autotest-env-a1b2c3d4' destruido exitosamente
 ```
 
-# 📝 Formato de Archivos para Pruebas
-Para que el agente pueda desplegar un entorno, necesita un archivo de configuración .yml que siga un formato similar al de docker-compose.
+# 📝 Formato de Archivos(.yml)
+El agente requiere un archivo YAML extendido. Soporta las directivas estándar de Docker Compose más las secciones autonómicas.
 
-El agente soporta actualmente las siguientes directivas:
-
-- services: La clave raíz que contiene la definición de los servicios.
-- image: El nombre de una imagen de Docker Hub para hacer pull (ej: redis:alpine, postgres:14).
-- build: La ruta relativa (desde el archivo .yml) a un directorio que contiene un Dockerfile para construir una imagen local.
-- ports: Un listado de mapeo de puertos HOST:CONTENEDOR.
-- environment: Un listado de variables de entorno para el contenedor.
-- health_check: Define las reglas para la autocorrección.
+Directivas Soportadas:
+- **Estándar**: services, image, build, ports, environment.
+- health_check (Autocorrección):
   * type: http_get o tcp_connect.
-  * endpoint: (Para http_get) La ruta a chequear (ej: /health).
-  * port: (Para tcp_connect) El puerto del host a chequear.
-  * retries: (Opcional) Número de fallos antes de reiniciar (default: 3).
-  * interval: (Opcional) Segundos entre chequeos (default: 15).
+  * endpoint / port: Objetivo del chequeo.
+  * retries: Intentos antes de reiniciar.
+- optimization_rules (Auto-optimización):
+  * metric: Métrica a evaluar (actualmente soporta cpu_usage).
+  * threshold: Porcentaje límite (ej: 70).
+  * action: Acción a tomar (ej: scale_up).
+  * replicas: Cantidad de contenedores a agregar.
 
 Ejemplo de docker-compose.yml Válido
 ```yaml
 # Este archivo es leído por el agente.py
 
 services:
-  # Servicio 'web' construido desde un Dockerfile local
   web:
     build: ./api  
     ports:
-      - "5000:5000" # Expone el puerto 5000 del host
-    environment:
-      - FLASK_ENV=development
+      - "5000:5000"
+    # Reglas de Autocorreción
     health_check:
       type: "http_get"
       endpoint: "/health"
       retries: 3
 
-  # Servicio 'cache' basado en una imagen pública
-  cache:
-    image: "redis:alpine"
-    ports:
-      - "6379:6379" # Expone el puerto de Redis al host
-    health_check:
-      type: "tcp_connect"
-      port: 6379 # El agente chequeará el puerto 6379 en localhost
+    # Reglas de Auto-optimización
+    optimization_rules:
+      - metric: "cpu_usage"
+        threshold: 70       # Si CPU > 70%
+        action: "scale_up"  # Escalar horizontalmente
+        replicas: 1
 ```
+
+# ⚠️ Limitaciones de la Versión Local  
+Al ser un prototipo diseñado para ejecutarse en una sola máquina host sin un orquestador complejo (como Kubernetes) ni un Proxy Inverso configurado, existen las siguientes limitaciones:
+1. **Sin Balanceo de Carga:** Cuando el agente escala y crea réplicas (ej: web-replica-1), estas se conectan a la red interna pero no reciben tráfico externo automáticamente. El puerto 5000 del host sigue apuntando solo al contenedor original.
+2. **Puertos de Réplicas:** Las réplicas creadas por Self-Optimization no exponen puertos al host para evitar errores de tipo Address already in use.
+3. **Alcance de Red:** Los Health Checks dependen de la visibilidad de localhost.
+
+Estas limitaciones se resuelven en la versión Cloud MVP mediante el uso de un Proxy Inverso (Traefik) y descubrimiento de servicios dinámico.
