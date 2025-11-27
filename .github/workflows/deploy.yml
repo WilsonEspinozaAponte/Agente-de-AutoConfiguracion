@@ -20,12 +20,12 @@ jobs:
           host: ${{ secrets.HOST_DNS }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "./*" # Copia todo el contenido del repo
+          source: "./*"
           target: "/home/ubuntu/agente-app"
 
-      - name: Ejecutar Agente y capturar nombre
+      - name: Ejecutar Agente y Capturar Nombre
         uses: appleboy/ssh-action@master
-        id: run_agent # ID para capturar la salida después
+        id: run_agent # ID importante para referenciarlo después
         with:
           host: ${{ secrets.HOST_DNS }}
           username: ${{ secrets.USERNAME }}
@@ -34,20 +34,14 @@ jobs:
             # 1. Preparar entorno
             sudo apt-get update
             sudo apt-get install -y python3-venv
-
-            # 2. Preparar el directorio
             cd /home/ubuntu/agente-app
-
-            # 3. Crear y activar un entorno virtual (Soluciona error PEP 668)
-            # Esto aisla las librerías del proyecto del sistema operativo
             python3 -m venv venv
             source venv/bin/activate
-
-            # 4. Instalar dependencias DENTRO del entorno virtual
             pip install -r requirements.txt
 
-            # 5. Ejecutar el despliegue
-            # Capturamos el nombre del entorno para el siguiente paso
+            # 2. Ejecutar despliegue y capturar SOLAMENTE la última línea (el nombre)
+            # Ejecutamos el deploy y filtramos la salida para encontrar el nombre.
+            
             echo "Iniciando despliegue..."
             python agente.py deploy -f example/docker-compose.yml > deploy_output.txt 2>&1
             
@@ -66,17 +60,25 @@ jobs:
             
             echo "Entorno detectado: $ENV_NAME"
             
+            # Para pasar una variable desde SSH al siguiente paso de GitHub, es complejo.
+            # Lo más fácil para este prototipo es escribir el nombre en un archivo que el siguiente paso pueda "adivinar" 
+            # o simplemente imprimirlo de una forma específica.
+            
+            # Pero dado que estamos dentro de SSH, el 'output' del step es todo el texto.
+            # Vamos a simplificar: El usuario verá el log y confirmará.
             # Para el comentario automático dinámico real, necesitamos extraerlo del stdout del step.
             echo "::set-output name=env_name::$ENV_NAME"
 
       - name: Comentar en el Pull Request
         uses: thollander/actions-comment-pull-request@v2
+        if: success()
         with:
           message: |
             **Entorno de Pruebas Desplegado**
             
-            ¡Tu entorno está listo en la nube!
+            ¡El sistema autonómico ha desplegado tu entorno! ☁️
             
+            **Estado:** Activo
             **URL:** http://${{ steps.run_agent.outputs.env_name }}.${{ secrets.HOST_DNS }}.nip.io
             
             *El entorno se destruirá automáticamente al cerrar este PR.*
