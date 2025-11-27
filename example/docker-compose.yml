@@ -1,8 +1,10 @@
 services:
   web:
     build: ./api  # Le dice a Docker que construya desde el Dockerfile
-    ports:
-      - "5000:5000"
+    # ports:
+    #  - "5000:5000"
+    expose:
+      - "5000"
     health_check:
       type: "http_get"
       endpoint: "/health"
