@@ -31,15 +31,25 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # 1. Instalar dependencias en el servidor (si no existen)
-            sudo apt-get install -y python3-pip
-            pip3 install -r /home/ubuntu/agente-app/requirements.txt
+            # 1. Instalar venv en el sistema (necesario para Ubuntu 24.04)
+            sudo apt-get update
+            sudo apt-get install -y python3-venv
             
-            # 2. Ejecutar el despliegue
+            # 2. Preparar el directorio
             cd /home/ubuntu/agente-app
-            # Capturamos solo el nombre del entorno de la salida
-            # (El script de Python debería imprimir el nombre al final o lo parseamos)
-            python3 agent.py deploy -f example/docker-compose.yml
+
+            # 3. Crear y activar un entorno virtual (Soluciona error PEP 668)
+            # Esto aisla las librerías del proyecto del sistema operativo
+            python3 -m venv venv
+            source venv/bin/activate
+
+            # 4. Instalar dependencias DENTRO del entorno virtual
+            pip install -r requirements.txt
+
+            # 5. Ejecutar el despliegue
+            # Capturamos el nombre del entorno para el siguiente paso
+            OUTPUT=$(python agente.py deploy -f example/docker-compose.yml)
+            echo "$OUTPUT"
 
       - name: Comentar en el Pull Request
         uses: thollander/actions-comment-pull-request@v2
