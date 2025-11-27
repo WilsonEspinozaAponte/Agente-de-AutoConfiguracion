@@ -18,7 +18,8 @@ services:
         replicas: 1
   cache:
     image: "redis:alpine"
-    ports:
+    # ports:
+    expose:
       - "6379:6379"
     health_check:
       type: "tcp_connect"
