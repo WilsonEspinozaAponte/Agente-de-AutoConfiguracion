@@ -41,7 +41,15 @@ def deploy_environment(config: dict, base_dir: str) -> (str, dict): # type: igno
 
     # Generar un nombre único para este entorno y sus etiquetas
     env_name = f"autotest-env-{uuid.uuid4().hex[:8]}"
-    labels = {ENV_LABEL: env_name}
+
+    # Integración de Traefik
+    HOST_IP = "34.197.210.107" # IP Pública del servidor
+    public_url = f"{env_name}.{HOST_IP}.nip.io" # URL 
+
+    labels = {
+        ENV_LABEL: env_name,
+        "traefik.enable": "true", # Traefik gestiona este contenedor
+    }
 
     deployed_services = {}
 
@@ -79,11 +87,18 @@ def deploy_environment(config: dict, base_dir: str) -> (str, dict): # type: igno
 
             # Preparar configuración del contenedor (puertos, env)
             port_bindings = {}
+
+            # Etiquetas dinámicas
+            service_labels = labels.copy()
+            # Solo exponemos el servicio 'web' (o el que tenga puerto 5000/80)
+            # Asumimos que el primer servicio definido con puertos es el que queremos exponer
+
             if 'ports' in service_config:
-                for port_mapping in service_config['ports']:
-                    host_port, container_port = port_mapping.split(':')
-                    # docker-py espera {'container_port/protocolo': host_port}
-                    port_bindings[f"{container_port}/tcp"] = host_port
+                container_port = service_config['ports'][0].split(':')[-1]
+                # Regla de Enrutamiento: Si alguien entra con este Host, mándalo aquí
+                service_labels[f"traefik.http.routers.{container_name}.rule"] = f"Host(`{public_url}`)"
+                # Configurar el puerto interno al que Traefik debe redirigir el tráfico
+                service_labels[f"traefik.http.services.{container_name}.loadbalancer.server.port"] = container_port
 
             environment_vars = service_config.get('environment', [])
 
@@ -92,7 +107,7 @@ def deploy_environment(config: dict, base_dir: str) -> (str, dict): # type: igno
             container = client.containers.run(
                 image=image_name,
                 name=container_name,
-                labels=labels,                     # Esencial para el teardown
+                labels=service_labels,                     # Se usa la nueva etiqueta de TraefiK
                 network=network.name,              # Conectar a nuestra red aislada
                 ports=port_bindings,               # Mapear puertos
                 environment=environment_vars,      # Establecer variables de entorno
