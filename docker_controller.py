@@ -120,6 +120,18 @@ def deploy_environment(config: dict, base_dir: str) -> (str, dict): # type: igno
                 environment=environment_vars,      # Establecer variables de entorno
                 detach=True                        # Correr en segundo plano
             )
+            
+            if service_name == "web":
+                try:
+                    # Nombre de la red donde vive Traefik 
+                    TRAEFIK_NETWORK = "traefik_default" 
+                    
+                    # Obtenemos la referencia a la red y conectamos el contenedor
+                    network_traefik = client.networks.get(TRAEFIK_NETWORK)
+                    network_traefik.connect(container)
+                    print(f"    Contenedor conectado a la red '{TRAEFIK_NETWORK}' para acceso externo.")
+                except Exception as e:
+                    print(f"    Advertencia: No se pudo conectar a la red '{TRAEFIK_NETWORK}'. Traefik podría no encontrar el servicio. Error: {e}")
 
             # Se recarga el estado para obtener los puertos asignados
             container.reload()

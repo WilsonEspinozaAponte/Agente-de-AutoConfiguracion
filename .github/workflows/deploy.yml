@@ -67,7 +67,6 @@ jobs:
             # Pero dado que estamos dentro de SSH, el 'output' del step es todo el texto.
             # Vamos a simplificar: El usuario verá el log y confirmará.
             # Para el comentario automático dinámico real, necesitamos extraerlo del stdout del step.
-            echo "env_name=$ENV_NAME" >> $GITHUB_OUTPUT
 
       - name: Comentar en el Pull Request
         uses: thollander/actions-comment-pull-request@v2
