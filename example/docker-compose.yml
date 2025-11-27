@@ -1,0 +1,25 @@
+services:
+  web:
+    build: ./api  # Le dice a Docker que construya desde el Dockerfile
+    ports:
+      - "5000:5000"
+    health_check:
+      type: "http_get"
+      endpoint: "/health"
+      retries: 3
+      interval: 15
+
+    optimization_rules:
+      - metric: "cpu_usage"
+        threshold: 10
+        action: "scale_up"
+        replicas: 1
+  cache:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
+    health_check:
+      type: "tcp_connect"
+      port: 6379
+      retries: 3
+      interval: 15

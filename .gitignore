@@ -1,7 +1,5 @@
 /venv/
 
-/ejemplo/
-
 __pycache__/
 *.pyc
 *.pyo
