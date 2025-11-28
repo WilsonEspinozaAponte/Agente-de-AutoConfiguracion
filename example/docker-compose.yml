@@ -20,7 +20,7 @@ services:
     image: "redis:alpine"
     # ports:
     expose:
-      - "6379:6379"
+      - "6379"
     health_check:
       type: "tcp_connect"
       port: 6379

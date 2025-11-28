@@ -96,10 +96,15 @@ def deploy_environment(config: dict, base_dir: str) -> (str, dict): # type: igno
             if service_name == "web":
                 container_port = "5000" # Puerto interno estándar de Flask
                 
+                TRAEFIK_NETWORK = "traefik_default" 
+
                 # Regla de Enrutamiento
                 service_labels[f"traefik.http.routers.{container_name}.rule"] = f"Host(`{public_url}`)"
                 # Configurar el puerto interno
                 service_labels[f"traefik.http.services.{container_name}.loadbalancer.server.port"] = container_port
+                
+                # Le dice a Traefik: "Ignora la red interna, usa la IP de esta red para hablar conmigo"
+                service_labels["traefik.docker.network"] = TRAEFIK_NETWORK
                 
                 print(f"Configurando Traefik para '{service_name}' en {public_url} -> :{container_port}")
             
