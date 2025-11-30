@@ -1,0 +1,50 @@
+name: Teardown Cloud MVP
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup-environment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Destruir Entorno en Servidor
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST_DNS }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # 1. Preparar contexto
+            cd /home/ubuntu/agente-app
+            source venv/bin/activate
+
+            # 2. Recuperar el nombre del entorno
+            if [ ! -f last_env.txt ]; then
+              echo "No se encontró el archivo 'last_env.txt'. No hay nada que limpiar o ya fue limpiado."
+              exit 0
+            fi
+            
+            ENV_NAME=$(cat last_env.txt)
+            echo "Objetivo identificado para destrucción: $ENV_NAME"
+
+            # 3. DETENER EL MONITOR (Paso Crítico)
+            # Buscamos el proceso que contenga el nombre del entorno y lo matamos.
+            # "pkill -f" busca en toda la línea de comando.
+            # "|| true" asegura que el script no falle si el monitor ya estaba muerto.
+            
+            echo " Deteniendo el proceso de monitoreo (Self-Healing)..."
+            pkill -f "monitor.*$ENV_NAME" || echo "El monitor no estaba corriendo."
+            
+            # Pequeña pausa para asegurar que el proceso liberó los recursos
+            sleep 2
+
+            # 4. EJECUTAR EL TEARDOWN DEL AGENTE
+            echo " Iniciando destrucción de recursos Docker..."
+            # El input 'y' es para confirmar automáticamente si el agente pide confirmación
+            python3 agente.py teardown $ENV_NAME <<EOF
+            y
+            EOF
+
+            # 5. Limpieza final de archivos
+            rm last_env.txt
+            echo " Limpieza completada. Entorno $ENV_NAME eliminado."
