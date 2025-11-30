@@ -21,7 +21,7 @@ Pasos para la Instalación
 Clona el repositorio:
 
 ```
-git clone https://github.com/WilsonEspinozaAponte/Agente-de-AutoConfiguracion.git
+git clone https://github.com/Esap28/Agente-de-AutoConfiguracion.git
 cd Agente-de-AutoConfiguracion
 ```
 Crea y activa un entorno virtual:
