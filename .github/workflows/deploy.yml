@@ -64,7 +64,7 @@ jobs:
             # &: Ejecuta en segundo plano
             # > monitor.log: Guarda los logs para poder verlos luego
             echo "Iniciando Auto-Healing y Auto-Optimization en segundo plano..."
-            nohup python agente.py monitor -f example/docker-compose.yml $ENV_NAME > monitor.log 2>&1 &
+            nohup python -u agente.py monitor -f example/docker-compose.yml $ENV_NAME > monitor.log 2>&1 &
             
             echo "Agente de monitoreo activo en segundo plano (PID: $!)."
 
