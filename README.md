@@ -1,182 +1,98 @@
 # 🤖 Agente de Configuración Dinámica de Entornos de Pruebas
- **⚠️ NOTA DE VERSIÓN: Esta rama contiene el prototipo diseñado para ejecución local. Funciona sobre un Docker Engine en una sola máquina y está destinado a validar la lógica de los agentes autonómicos. Para la versión con despliegue en la nube, balanceo de carga y CI/CD integrado, por favor consulte la rama del MVP final.**  
+ **⚠️ NOTA DE VERSIÓN:  
+Esta rama contiene la versión completa del sistema, diseñada para integrarse con GitHub Actions, desplegar en AWS EC2 y gestionar el tráfico mediante Traefik (Reverse Proxy).  
+Incluye Balanceo de Carga real y ciclo de vida automatizado por Pull Requests.**  
   
 
-Este proyecto es un prototipo funcional de un agente de computación autonómica diseñado para automatizar el ciclo de vida de los entornos de pruebas.
+Este proyecto implementa un Agente de Computación Autonómica capaz de gestionar entornos de prueba efímeros sin intervención humana.
 
-El objetivo principal es eliminar la intervención manual y los errores asociados con la configuración de entornos de desarrollo y QA, permitiendo a los desarrolladores y testers obtener un entorno funcional y aislado con solo hacer un push de su código.
+# 🌟 Características Principales
+## 1. GitOps & Self-Configuration:
+* Al abrir un Pull Request, el agente despliega automáticamente un entorno aislado en la nube.
+* Publica un comentario en el PR con una URL pública única (ej: http://autotest-123.tu-ip.nip.io).
 
-Esta versión implementa tres propiedades autonómicas clave:
- 1. **Autoconfiguración (Self-Configuration)**: Despliegue automático de recursos.
- 2. **Autocorrección (Self-Healing)**: Detección de fallos y reinicio de servicios.
- 3. **Auto-optimización (Self-Optimization)**: Escalado horizontal reactivo basado en uso de CPU.
+## 2. Self-Healing (Autocorrección):
+* Monitorea los contenedores en segundo plano.
+* Si un servicio cae, el agente lo detecta y lo reinicia automáticamente.
 
-# 🚀 Prerrequisitos y Configuración
-Para ejecutar este agente, necesitas tener lo siguiente instalado en tu sistema:
+## 3. Self-Optimization (Auto-optimización):
+* Monitorea el uso de CPU.
+* Si la carga sube (ej: >20%), escala horizontalmente creando réplicas.
+* Traefik detecta las réplicas y balancea la carga automáticamente entre ellas.
 
-- Python 3.9+
-- Docker Engine (Docker Desktop para Windows/Mac o el servicio dockerd en Linux)
-
-Pasos para la Instalación
-Clona el repositorio:
-
-```
-git clone https://github.com/WilsonEspinozaAponte/Agente-de-AutoConfiguracion.git
-cd Agente-de-AutoConfiguracion
-```
-Crea y activa un entorno virtual:
-
-```
-# En Windows
-python -m venv venv
-.\venv\Scripts\activate
-
-# En macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-Instala las dependencias:
-```
-pip install -r requirements.txt
-```
-
-# 📂 Archivos del Proyecto
-Este repositorio contiene el núcleo del agente autonómico:
-
-- agente.py: El punto de entrada del programa. Define la interfaz de línea de comandos (CLI) usando click.
+## 4. Teardown Automático:
+* Al cerrar o fusionar el Pull Request, el entorno se destruye para ahorrar costos.
   
-- config_parser.py: Responsable de leer, analizar y validar los archivos de configuración .yml.
+# 🏗️ Arquitectura
+El sistema funciona mediante la interacción de tres componentes:
+1. **Orquestador (GitHub Actions)**: Detecta eventos (PR Open/Close) y envía órdenes al servidor vía SSH.
+2. **Servidor Host (AWS EC2)**:
+   * Ejecuta el Agente (Python).
+   * Ejecuta Docker Engine (v28.x recomendado).
+   * Ejecuta Traefik v3 como Proxy Inverso y Balanceador de Carga.
+3. **Enrutamiento**: Se utiliza nip.io para resolución de nombres dinámica basada en la IP del servidor.
 
-- docker_controller.py: Contiene toda la lógica para interactuar con la API de Docker, monitorear salud, calcular métricas de CPU y ejecutar acciones de escalado.
+# ⚙️ Configuración de Infraestructura (Setup)
+## 1. Requisitos del Servidor
+  * Docker Engine: Se recomienda la versión 28.0.x para máxima compatibilidad con Traefik.
+  * Puertos Abiertos (Firewall): 80 (HTTP), 8080 (Traefik Dashboard), 22 (SSH).
 
-- requirements.txt: Dependencias del proyecto
-
-# 🛠️ Comandos Básicos
-Asegúrate de que el servicio de Docker esté en ejecución.
-
-**1. Desplegar un Entorno:**  
-Lee el archivo de configuración, construye imágenes, crea una red aislada y levanta los servicios.
-```
-python agente.py deploy -f <ruta/al/archivo.yml>
-```
-Ejemplo de salida:
-```
-Iniciando despliegue desde 'example/docker-compose.yml'...
-Archivo de configuración leído. 2 servicios detectados...
-   ¡Entorno 'autotest-env-a1b2c3d4' desplegado exitosamente!
-Servicios creados:
-  - web (ID: ...)
-    Puertos: {'5000/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '5000'}]}
-  - cache (ID: ...)
-    Puertos: {'6379/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '6379'}]}
-```
-**Importante**: Anota el nombre del entorno (ej: autotest-env-a1b2c3d4) para su posterior monitoreo o eliminación.. 
-
-**2. Monitorear un Entorno (Healing & Optimization):**  
-Inicia un bucle activo que:
-1. Verifica la salud de los servicios (Health Checks).
-2. Calcula el uso de CPU de los contenedores.
-3. Reinicia contenedores si fallan repetidamente (Self-Healing).
-4. Crea réplicas si la CPU supera el umbral definido (Self-Optimization).
-
-```
-python agente.py monitor -f <ruta/al/archivo.yml> <nombre-del-entorno>
-```
-
-Ejemplo de salida (al detectar una falla):
-```
-(venv) PS> python agente.py monitor -f ejemplo/docker-compose.yml autotest-env-a1b2c3d4
-
-Reglas de monitoreo cargadas desde '...docker-compose.yml'.
-Iniciando modo de monitoreo para 'autotest-env-a1b2c3d4'...
-(Presiona Ctrl+C para detener el agente y el monitoreo)...
---- [Ciclo de chequeo - ...] ---
-    - Chequeo HTTP fallido para '...-web': No se pudo conectar...
-      Servicio 'web' falló chequeo. Conteo: 1/3
-...
---- [Ciclo de chequeo - ...] ---
-    - Chequeo HTTP fallido para '...-web': No se pudo conectar...
-      Servicio 'web' falló chequeo. Conteo: 3/3
-      AUTOCORRECCIÓN: Servicio 'web' alcanzó 3 fallos. Reiniciando...
-      Contenedor 'autotest-env-a1b2c3d4-web' reiniciado.
-```
-
-Ejemplo de salida (Escalado por CPU):
-```
-(venv) PS> python agente.py monitor -f ejemplo/docker-compose.yml autotest-env-a1b2c3d4
-
-...
---- [Ciclo de chequeo - ...] ---
-      web: CPU 90.0%
-       ALERTA: CPU (90.00%) superó umbral (80%)
-       ESCALANDO: Creando réplica 'autotest-env-a1b2c3d4-web-replica-07ffa7'...
-       Réplica 'autotest-env-a1b2c3d4-web-replica-07ffa7' iniciada exitosamente.
-```
-
-**3. Destruir un Entorno:**
-Elimina todos los recursos (contenedores, réplicas y redes) asociados al entorno.
-```
-python agente.py teardown <nombre-del-entorno>
-```
-
-Ejemplo de uso:
-
-```
-(venv) PS> python agente.py teardown autotest-env-a1b2c3d4
-```
-
-Salida:
-
-```
-Solicitando destrucción del entorno 'autotest-env-a1b2c3d4'...
-  ¿Estás seguro de que quieres eliminar... [y/N]: y
-Encontrados 2 contenedores. Eliminando...
-Encontradas 1 redes. Eliminando...
-  Entorno 'autotest-env-a1b2c3d4' destruido exitosamente
-```
-
-# 📝 Formato de Archivos(.yml)
-El agente requiere un archivo YAML extendido. Soporta las directivas estándar de Docker Compose más las secciones autonómicas.
-
-Directivas Soportadas:
-- **Estándar**: services, image, build, ports, environment.
-- health_check (Autocorrección):
-  * type: http_get o tcp_connect.
-  * endpoint / port: Objetivo del chequeo.
-  * retries: Intentos antes de reiniciar.
-- optimization_rules (Auto-optimización):
-  * metric: Métrica a evaluar (actualmente soporta cpu_usage).
-  * threshold: Porcentaje límite (ej: 70).
-  * action: Acción a tomar (ej: scale_up).
-  * replicas: Cantidad de contenedores a agregar.
-
-Ejemplo de docker-compose.yml Válido
+## 2. Configurar Traefik (El "Recepcionista")
+En el servidor, crear una carpeta traefik y un archivo docker-compose.yml:  
 ```yaml
-# Este archivo es leído por el agente.py
-
 services:
-  web:
-    build: ./api  
+  traefik:
+    image: "traefik:v3.2"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
     ports:
-      - "5000:5000"
-    # Reglas de Autocorreción
-    health_check:
-      type: "http_get"
-      endpoint: "/health"
-      retries: 3
-
-    # Reglas de Auto-optimización
-    optimization_rules:
-      - metric: "cpu_usage"
-        threshold: 70       # Si CPU > 70%
-        action: "scale_up"  # Escalar horizontalmente
-        replicas: 1
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
 ```
+Ejecutar:
+```
+docker compose up -d
+```
+## 3. Configurar Secretos en Github
+Ir a Settings > Secrets and variables > Actions en tu repositorio y añade:  
+ Secreto | Descripción 
+--- | --- 
+ HOST_DNS | La IP Pública de tu servidor (ej: 34.197.xxx.xxx) 
+ USERNAME | El usuario SSH (ej: ubuntu) 
+ EC2_SSH_KEY| El contenido de la llave privada (.pem)
 
-# ⚠️ Limitaciones de la Versión Local  
-Al ser un prototipo diseñado para ejecutarse en una sola máquina host sin un orquestador complejo (como Kubernetes) ni un Proxy Inverso configurado, existen las siguientes limitaciones:
-1. **Sin Balanceo de Carga:** Cuando el agente escala y crea réplicas (ej: web-replica-1), estas se conectan a la red interna pero no reciben tráfico externo automáticamente. El puerto 5000 del host sigue apuntando solo al contenedor original.
-2. **Puertos de Réplicas:** Las réplicas creadas por Self-Optimization no exponen puertos al host para evitar errores de tipo Address already in use.
-3. **Alcance de Red:** Los Health Checks dependen de la visibilidad de localhost.
+# 📝 Uso: El Flujo de Trabajo
+Una vez configurado, no es necesario ejecutar comandos manuales.
+1. Desarrolla: Haz cambios en tu código y archivo docker-compose.yml.
+   * Nota: No mapees puertos (ports:) en el YAML, usa expose para que Traefik lo gestione.
+2. Pull Request: Sube tu rama y abre un PR hacia main.
+3. Despliegue: GitHub Actions se activará. Espera el comentario del bot.
+4. Prueba: Haz clic en el enlace del comentario para ver tu entorno.
+5. Limpieza: Cierra el PR y el entorno se autodestruirá.
 
-Estas limitaciones se resuelven en la versión Cloud MVP mediante el uso de un Proxy Inverso (Traefik) y descubrimiento de servicios dinámico.
+# 🩺 Monitoreo y Debugging
+Si necesitas ver qué está haciendo el agente "por detrás", conéctate por SSH al servidor.  
+**Ver logs del agente en tiempo real:**
+```
+cd agente-app
+tail -f monitor.log
+```
+Aquí se verán los chequeos de salud, alertas de CPU y acciones de escalado.
+
+*Ver logs de tráfico (Traefik)**: Entra a http://TU_IP:8080 para ver el Dashboard de enrutamiento.
+
+# 📂 Estructura del Repositorio
+  * .github/workflows/: Define los pipelines de CI/CD (deploy.yml, teardown.yml).
+  * agente.py: CLI principal (modificado para ejecución cloud).
+  * docker_controller.py: Controlador extendido con lógica de etiquetas para Traefik y conexión de redes.
+  * config_parser.py: Validador de configuración.
+  * example/: Proyecto de prueba (API Flask + Redis) configurado para la nube.
+
+## ⚠️ Notas de Compatibilidad
+  * Este proyecto utiliza Traefik v3.
+  * Asegúrate de que tu versión de Docker Engine sea compatible con la API del cliente de Python y Traefik (probado exitosamente en Docker v28).
