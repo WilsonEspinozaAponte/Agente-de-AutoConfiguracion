@@ -39,8 +39,6 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
 
-            pkill -f "agent.py monitor" || true # Se mata cualquier proceso anterior para evitar saturacion
-
             # 2. Ejecutar despliegue y capturar SOLAMENTE la última línea (el nombre)
             # Ejecutamos el deploy y filtramos la salida para encontrar el nombre.
             
