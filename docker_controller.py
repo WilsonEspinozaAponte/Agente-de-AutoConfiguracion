@@ -428,25 +428,42 @@ def _calculate_cpu_percent(stats: dict) -> float:
 def _scale_service_up(client, env_name, service_name, service_config, network_name):
     """
     Despliega una nueva réplica del servicio (Escalado Horizontal).
-    NOTA: Las réplicas NO mapean puertos al host para evitar conflictos.
+    CORRECION: Incluye etiquetas de Traefik y conexión de red
     """
     replica_id = uuid.uuid4().hex[:6]
     container_name = f"{env_name}-{service_name}-replica-{replica_id}"
     print(f"     ESCALANDO: Creando réplica '{container_name}'...")
 
     try:
-        # Resolver Imagen (Igual que en deploy)
+        # Resolver Imagen
         image_name = service_config.get('image')
-        # Si era un build, intentamos usar la imagen ya taggeada del entorno
         if 'build' in service_config:
             image_name = f"{service_name}:{env_name}"
         
         # Configuración
         environment_vars = service_config.get('environment', [])
+        
+        # 1. Definimos las etiquetas base
         labels = {ENV_LABEL: env_name, "autotest.type": "replica"}
+        
+        # 2. Si es el servicio web, agregamos etiquetas de Traefik
+        # Usamos el mismo nombre de Router y Servicio que el original para que Traefik los agrupe.
+        if service_name == "web":
+            HOST_IP = "34.197.210.107"
+            public_url = f"{env_name}.{HOST_IP}.nip.io"
+            TRAEFIK_NETWORK = "traefik_default"
+            
+            labels["traefik.enable"] = "true"
+            labels["traefik.docker.network"] = TRAEFIK_NETWORK
+            # Usamos el nombre del contenedor original como identificador del servicio
+            # para que Traefik sepa que esta réplica pertenece al mismo grupo.
+            original_container_name = f"{env_name}-{service_name}"
+            
+            labels[f"traefik.http.routers.{original_container_name}.rule"] = f"Host(`{public_url}`)"
+            labels[f"traefik.http.services.{original_container_name}.loadbalancer.server.port"] = "5000"
 
-        # Crear contenedor (SIN PUERTOS)
-        client.containers.run(
+        # Crear contenedor
+        container = client.containers.run(
             image=image_name,
             name=container_name,
             labels=labels,
@@ -454,6 +471,17 @@ def _scale_service_up(client, env_name, service_name, service_config, network_na
             environment=environment_vars,
             detach=True
         )
+        
+        # 3. Conectar a la red de Traefik (Igual que en deploy)
+        if service_name == "web":
+            try:
+                TRAEFIK_NETWORK = "traefik_default" 
+                network_traefik = client.networks.get(TRAEFIK_NETWORK)
+                network_traefik.connect(container)
+                print(f"     Réplica conectada a '{TRAEFIK_NETWORK}'.")
+            except Exception as e:
+                print(f"     Error conectando réplica a red pública: {e}")
+
         print(f"     Réplica '{container_name}' iniciada exitosamente.")
         
     except Exception as e:
