@@ -13,7 +13,7 @@ services:
 
     optimization_rules:
       - metric: "cpu_usage"
-        threshold: 10
+        threshold: 20
         action: "scale_up"
         replicas: 1
   cache:
