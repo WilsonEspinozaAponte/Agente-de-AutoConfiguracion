@@ -215,73 +215,82 @@ def _perform_health_check(container: docker.models.containers.Container,
                           service_config: dict, 
                           hc_rule: dict) -> bool:
     """
-    Realiza un único sondeo de salud a un contenedor
-
-    Args:
-        container (docker.models.containers.Container): El objeto contenedor de Docker
-        service_config (dict): La configuración del servicio (para encontrar puertos)
-        hc_rule (dict): La regla de health_check del YML.
-
-    Returns:
-        bool: True si el chequeo es exitoso, False en caso contrario
+    Realiza un único sondeo de salud a un contenedor.
+    Adaptado para funcionar con o sin puertos mapeados al host.
     """
     
-    # Obtener la IP interna del contenedor en la red
+    # 1. Obtener la IP interna del contenedor
+    ip_address = None
     try:
-        container.reload() # Asegura que el estado esté actualizado
+        container.reload()
         if not container.attrs['State']['Running']:
             print(f"    - Chequeo fallido: Contenedor '{container.name}' no está 'running'.")
             return False
             
-        # Obtener la IP de la primera red que no sea 'bridge'
-        ip_address = None
-        for network_name, network_data in container.attrs['NetworkSettings']['Networks'].items():
-            if network_name != "bridge":
-                ip_address = network_data['IPAddress']
+        # Intentar obtener la IP de la red del entorno primero
+        # Busca redes que contengan 'autotest' o la primera que no sea bridge/traefik
+        networks = container.attrs['NetworkSettings']['Networks']
+        for net_name, net_data in networks.items():
+            if "autotest" in net_name: 
+                ip_address = net_data['IPAddress']
                 break
+        
+        # Si no encontró la específica, usa la primera disponible que tenga IP
+        if not ip_address:
+            for net_data in networks.values():
+                if net_data['IPAddress']:
+                    ip_address = net_data['IPAddress']
+                    break
         
         if not ip_address:
             raise Exception("No se pudo encontrar la IP interna del contenedor.")
 
     except Exception as e:
-        print(f"    - Chequeo fallido: No se pudo obtener estado/IP de '{container.name}': {e}")
+        print(f"    - Error obteniendo IP de '{container.name}': {e}")
         return False
 
-    # Realizar el chequeo basado en el tipo
+    # 2. Realizar el chequeo
     check_type = hc_rule['type']
     
     try:
         if check_type == 'http_get':
-            # Intentar encontrar el puerto del contenedor desde la config
-            if not service_config.get('ports'):
-                raise Exception("http_get requiere que el servicio defina 'ports'")
-            
-            # Tomar el puerto del HOST 
-            host_port = service_config['ports'][0].split(':')[0]
             endpoint = hc_rule['endpoint']
-
-            url = f"http://127.0.0.1:{host_port}{endpoint}"
             
-            response = requests.get(url, timeout=5) # Timeout de 5s
-            if 200 <= response.status_code < 300:
-                return True # Éxito
+            # LÓGICA DE PUERTO:
+            # Si hay puertos mapeados, podríamos usar localhost, pero para consistencia
+            # y soporte cloud sin mapeo se usa la IP INTERNA y el puerto INTERNO.
+            
+            # Intentar adivinar el puerto interno:
+            # 1. Mirar si hay 'expose' en el YAML
+            if 'expose' in service_config:
+                target_port = service_config['expose'][0]
+            # 2. Si no, mirar si hay 'ports' y tomar el lado derecho (contenedor)
+            elif 'ports' in service_config:
+                target_port = service_config['ports'][0].split(':')[-1]
+            # 3. Fallback para web (asumir 5000)
             else:
-                print(f"    - Chequeo HTTP fallido para '{container.name}': URL {url} devolvió status {response.status_code}")
+                target_port = "5000"
+
+            # Construir URL usando la IP Interna
+            url = f"http://{ip_address}:{target_port}{endpoint}"
+            
+            # Nota: Esto funciona en Linux nativo (AWS). 
+            response = requests.get(url, timeout=5)
+            
+            if 200 <= response.status_code < 300:
+                return True
+            else:
+                print(f"    - HTTP fallido: {url} -> status {response.status_code}")
                 return False
 
         elif check_type == 'tcp_connect':
-            port = hc_rule['port']
-            with socket.create_connection(("127.0.0.1", port), timeout=5):
-                return True # Éxito (conexión establecida)
+            port = int(hc_rule['port'])
+            # Usar la IP interna para el chequeo TCP también
+            with socket.create_connection((ip_address, port), timeout=5):
+                return True
 
-    except requests.exceptions.ConnectionError:
-        print(f"    - Chequeo HTTP fallido para '{container.name}': No se pudo conectar a {url}")
-        return False
-    except socket.error:
-        print(f"    - Chequeo TCP fallido para '{container.name}': No se pudo conectar al puerto {hc_rule['port']}")
-        return False
     except Exception as e:
-        print(f"    - Chequeo fallido para '{container.name}': {e}")
+        print(f"    - Chequeo fallido para '{container.name}' ({ip_address}): {e}")
         return False
         
     return False
