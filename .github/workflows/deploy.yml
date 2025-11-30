@@ -39,6 +39,8 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt
 
+            pkill -f "agent.py monitor" || true # Se mata cualquier proceso anterior para evitar saturacion
+
             # 2. Ejecutar despliegue y capturar SOLAMENTE la última línea (el nombre)
             # Ejecutamos el deploy y filtramos la salida para encontrar el nombre.
             
@@ -48,9 +50,7 @@ jobs:
             # Leemos el archivo para ver qué pasó (para los logs de GitHub)
             cat deploy_output.txt
             
-            # BUSCAMOS el nombre del entorno en la salida. 
-            # El agente imprime: "¡Entorno 'autotest-env-xxxxx' desplegado...!"
-            # Usamos grep y awk para extraer solo el ID.
+            # Buscamos el nombre del entorno en la salida. 
             ENV_NAME=$(grep -oP "autotest-env-[a-z0-9]+" deploy_output.txt | head -1)
             
             if [ -z "$ENV_NAME" ]; then
@@ -61,6 +61,14 @@ jobs:
             echo "Entorno detectado: $ENV_NAME"
             
             echo "$ENV_NAME" > /home/ubuntu/agente-app/last_env.txt
+
+            # nohup: Evita que el proceso muera al cerrar SSH
+            # &: Ejecuta en segundo plano
+            # > monitor.log: Guarda los logs para poder verlos luego
+            echo "Iniciando Auto-Healing y Auto-Optimization en segundo plano..."
+            nohup python agente.py monitor -f example/docker-compose.yml $ENV_NAME > monitor.log 2>&1 &
+            
+            echo "Agente de monitoreo activo en segundo plano (PID: $!)."
 
       - name: Recuperar Nombre del Entorno
         id: get_env_name
