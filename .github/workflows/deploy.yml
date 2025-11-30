@@ -23,7 +23,7 @@ jobs:
           source: "./*"
           target: "/home/ubuntu/agente-app"
 
-      - name: Ejecutar Agente y Capturar Nombre
+      - name: Ejecutar Agente en el servidor
         uses: appleboy/ssh-action@master
         id: run_agent # ID importante para referenciarlo después
         with:
@@ -60,7 +60,26 @@ jobs:
             
             echo "Entorno detectado: $ENV_NAME"
             
-            echo "env_name=$ENV_NAME" >> $GITHUB_OUTPUT
+            echo "$ENV_NAME" > /home/ubuntu/agente-app/last_env.txt
+
+      - name: Recuperar Nombre del Entorno
+        id: get_env_name
+        run: |
+          # 1. Crear archivo de llave temporal para conectar por SSH manual
+          echo "${{ secrets.EC2_SSH_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          
+          # 2. Leer el archivo remoto usando SSH estándar y guardarlo en variable local
+          # (StrictHostKeyChecking=no evita que pregunte 'yes/no' al conectar)
+          RETRIEVED_NAME=$(ssh -o StrictHostKeyChecking=no -i private_key.pem ${{ secrets.USERNAME }}@${{ secrets.HOST_DNS }} "cat /home/ubuntu/agente-app/last_env.txt")
+          
+          echo "Nombre recuperado desde AWS: $RETRIEVED_NAME"
+          
+          # 3. Guardar en la variable de salida de GitHub
+          echo "env_name=$RETRIEVED_NAME" >> $GITHUB_OUTPUT
+          
+          # 4. Limpieza de seguridad
+          rm private_key.pem
 
       - name: Comentar en el Pull Request
         uses: thollander/actions-comment-pull-request@v2
@@ -72,6 +91,6 @@ jobs:
             ¡El sistema autonómico ha desplegado tu entorno! ☁️
             
             **Estado:** Activo
-            **URL:** http://${{ steps.run_agent.outputs.env_name }}.${{ secrets.HOST_DNS }}.nip.io
+            **URL:** http://${{ steps.get_env_name.outputs.env_name }}.${{ secrets.HOST_DNS }}.nip.io
             
             *El entorno se destruirá automáticamente al cerrar este PR.*
